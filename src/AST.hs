@@ -25,6 +25,5 @@ data Expr =
     Xor Expr Expr |
     Not Expr      |
     Ident String  |
-    True          |
-    False
+    BConst Bool
     deriving (Show)

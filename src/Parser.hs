@@ -43,17 +43,17 @@ TokenParser{ parens = m_parens
            , commaSep1 = m_commaSep1
            , whiteSpace = m_whiteSpace } = makeTokenParser def
 
-boolExpr = buildExpressionParser boolExprTable boolTerm
+expr = buildExpressionParser boolExprTable boolTerm
 
-boolTerm = m_parens boolExpr
-        <|> (m_reserved "True" >> return AST.True)
-        <|> (m_reserved "False" >> return AST.False)
+boolTerm = m_parens expr
+        <|> (m_reserved "True" >> return (AST.BConst True))
+        <|> (m_reserved "False" >> return (AST.BConst False))
         <|> (m_identifier >>= return . AST.Ident)
 
 boolExprTable = [[prefix "not" AST.Not],
                  [binary "and" AST.And AssocLeft],
                  [binary "or" AST.Or AssocLeft],
-                 [binary "=" AST.Eq AssocLeft,
+                 [binary "=" AST.Eq AssocLeft, binary "<>" AST.NE AssocLeft,
                   binary "<" AST.LT AssocLeft, binary "<=" AST.LTE AssocLeft,
                   binary ">" AST.GT AssocLeft, binary ">=" AST.GTE AssocLeft]]
 
@@ -69,47 +69,71 @@ program = do try $ m_reserved "program"
              return $ AST.Program name source
 
 blocks :: Parser AST.Pascal
-blocks =  try varDec
-      <|>  blockBegin
+blocks =  try varDecPart
+      <|>  begin
 
-blockBegin :: Parser AST.Pascal
-blockBegin = do m_reserved "begin"
-                -- seq <- statements `sepEndBy1` m_semi
-                seq <- many1 statements
-                m_reserved "end"
-                return $ AST.Begin seq
+begin :: Parser AST.Pascal
+begin = do m_reserved "begin"
+           seq <- many1 statements
+           m_reserved "end"
+           return $ AST.Begin seq
 
-varDec :: Parser AST.Pascal
-varDec = do try $ m_reserved "var"
-            vars <- var `sepEndBy1` m_semi
-            return $ AST.VarDec vars
+varDecPart :: Parser AST.Pascal
+varDecPart = do try $ m_reserved "var"
+                varDecs <- varDec `sepEndBy1` m_semi
+                let varDecs' = concat varDecs
+                return $ AST.VarDec varDecs'
 
-var :: Parser AST.Pascal
-var = do ident <- m_identifier
-         m_colon
-         t <- m_identifier
-         return $ AST.Var ident t
+varDec :: Parser [AST.Pascal]
+varDec = do idents <- m_commaSep m_identifier
+            m_colon
+            t <- m_identifier
+            let vars = map (flip AST.Var $ t) idents
+            return vars
 
 statements :: Parser AST.Pascal
-statements = ifStmnt <|> assign
+statements = try assign
+          <|> try (begin >>= \b -> m_semi >> return b)
+          <|> selectionStmnt
+
+statementElse :: Parser AST.Pascal
+statementElse = try assign
+             <|> try (begin >>= \b -> m_semi >> return b)
+             <|> ifElseStmnt'
+
+selectionStmnt :: Parser AST.Pascal
+selectionStmnt = try ifElseStmnt
+              <|> ifStmnt
 
 ifStmnt :: Parser AST.Pascal
 ifStmnt = do m_reserved "if"
-             pred <- boolExpr
+             pred <- expr
              m_reserved "then"
              thenBranch <- statements
-             elseBranch <- optionMaybe elsePart
-             return $ AST.If pred thenBranch elseBranch
-    where
-        elsePart :: Parser AST.Pascal
-        elsePart = do m_reserved "else"
-                      stmnt <- statements
-                      return stmnt
+             return $ AST.If pred thenBranch Nothing
+
+ifElseStmnt :: Parser AST.Pascal
+ifElseStmnt = do m_reserved "if"
+                 pred <- expr
+                 m_reserved "then"
+                 thenBranch <- statementElse
+                 m_reserved "else"
+                 elseBranch <- statements
+                 return $ AST.If pred thenBranch (Just elseBranch)
+
+ifElseStmnt' :: Parser AST.Pascal
+ifElseStmnt' = do m_reserved "if"
+                  pred <- expr
+                  m_reserved "then"
+                  thenBranch <- statementElse
+                  m_reserved "else"
+                  elseBranch <- statementElse
+                  return $ AST.If pred thenBranch (Just elseBranch)
 
 assign :: Parser AST.Pascal
 assign = do ident <- m_identifier
             m_reservedOp ":="
-            expr <- boolExpr
+            expr <- expr
             m_semi
             return $ AST.Assign ident expr
 
@@ -123,9 +147,9 @@ pascalParser f = do
     Left err   -> print err
     Right expr -> print expr
 
--- boolExpr tester
-boolParser :: String -> IO ()
-boolParser s = case (parse boolExpr "" s) of
+-- expr tester
+exprParser :: String -> IO ()
+exprParser s = case (parse expr "" s) of
                    Left err  -> print err
                    Right xs  -> print xs
 
