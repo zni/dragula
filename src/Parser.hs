@@ -108,11 +108,6 @@ statements :: Parser AST.Pascal
 statements = baseStatements
           <|> selectionStmnt
 
--- Handle ambiguous if statements.
-statementElse :: Parser AST.Pascal
-statementElse = baseStatements
-             <|> ifElseStmnt'
-
 -- Handle if statements.
 selectionStmnt :: Parser AST.Pascal
 selectionStmnt = try ifElseStmnt
@@ -129,20 +124,10 @@ ifElseStmnt :: Parser AST.Pascal
 ifElseStmnt = do m_reserved "if"
                  pred <- expr
                  m_reserved "then"
-                 thenBranch <- statementElse
+                 thenBranch <- statements
                  m_reserved "else"
                  elseBranch <- statements
                  return $ AST.If pred thenBranch (Just elseBranch)
-
--- Handle ambiguous if statement.
-ifElseStmnt' :: Parser AST.Pascal
-ifElseStmnt' = do m_reserved "if"
-                  pred <- expr
-                  m_reserved "then"
-                  thenBranch <- statementElse
-                  m_reserved "else"
-                  elseBranch <- statementElse
-                  return $ AST.If pred thenBranch (Just elseBranch)
 
 assign :: Parser AST.Pascal
 assign = do ident <- m_identifier

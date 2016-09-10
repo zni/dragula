@@ -15,3 +15,11 @@ begin
         else
             C := A
 end.
+
+{
+If (And (Ident "A") (Ident "B"))
+    (If (Or (Ident "A") (Ident "C"))
+        (Assign "C" (Ident "B"))
+        (Just (Assign "C" (Ident "A"))))
+    Nothing
+}
