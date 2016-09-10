@@ -20,10 +20,15 @@ def = emptyDef{ commentStart = "{"
               , reservedOpNames = [":=", "+", "-", "*", "mod", "/",
                                    "=", "<=", "<",
                                    ">=", ">", "<>",
-                                   "not", "and", "or", "xor"]
-              , reservedNames = ["if", "then", "else", "begin",
-                                 "end", "program", "writeln",
-                                 "var", "True", "False"]
+                                   "not", "and", "or"]
+              , reservedNames = ["array", "begin", "case",
+                                 "const", "div", "do", "downto",
+                                 "else", "file", "for", "function",
+                                 "goto", "if", "in", "label",
+                                 "nil", "of", "packed", "procedure",
+                                 "program", "record", "repeat", "set",
+                                 "then", "to", "type", "until", "var",
+                                 "while", "with"]
               }
 
 TokenParser{ parens = m_parens
@@ -74,7 +79,7 @@ blocks =  try varDecPart
 
 begin :: Parser AST.Pascal
 begin = do m_reserved "begin"
-           seq <- many1 statements
+           seq <- m_semiSep statements
            m_reserved "end"
            return $ AST.Begin seq
 
@@ -91,16 +96,21 @@ varDec = do idents <- m_commaSep m_identifier
             let vars = map (flip AST.Var $ t) idents
             return vars
 
+-- Holds non-if statements.
+baseStatements :: Parser AST.Pascal
+baseStatements = try assign
+              <|> try begin
+
 statements :: Parser AST.Pascal
-statements = try assign
-          <|> try (begin >>= \b -> m_semi >> return b)
+statements = baseStatements
           <|> selectionStmnt
 
+-- Handle ambiguous if statements.
 statementElse :: Parser AST.Pascal
-statementElse = try assign
-             <|> try (begin >>= \b -> m_semi >> return b)
+statementElse = baseStatements
              <|> ifElseStmnt'
 
+-- Handle if statements.
 selectionStmnt :: Parser AST.Pascal
 selectionStmnt = try ifElseStmnt
               <|> ifStmnt
@@ -121,6 +131,7 @@ ifElseStmnt = do m_reserved "if"
                  elseBranch <- statements
                  return $ AST.If pred thenBranch (Just elseBranch)
 
+-- Handle ambiguous if statement.
 ifElseStmnt' :: Parser AST.Pascal
 ifElseStmnt' = do m_reserved "if"
                   pred <- expr
@@ -134,7 +145,6 @@ assign :: Parser AST.Pascal
 assign = do ident <- m_identifier
             m_reservedOp ":="
             expr <- expr
-            m_semi
             return $ AST.Assign ident expr
 
 pascal :: Parser AST.Pascal

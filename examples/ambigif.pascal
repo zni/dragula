@@ -11,7 +11,7 @@ begin
     C := True;
     if A and B then
         if A or C then
-            C := B;
+            C := B
         else
-            C := A;
+            C := A
 end.

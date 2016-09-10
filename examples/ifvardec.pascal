@@ -9,7 +9,10 @@ begin
     A := True;
     B := False;
     if A and B then
-        C := B;
+        begin
+            C := B;
+            D := A
+        end
     else
-        C := A;
+        C := A
 end.
