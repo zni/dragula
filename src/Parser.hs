@@ -48,19 +48,22 @@ TokenParser{ parens = m_parens
            , commaSep1 = m_commaSep1
            , whiteSpace = m_whiteSpace } = makeTokenParser def
 
-expr = buildExpressionParser boolExprTable boolTerm
+expr = buildExpressionParser exprTable term
 
-boolTerm = m_parens expr
-        <|> (m_reserved "True" >> return (AST.BConst True))
-        <|> (m_reserved "False" >> return (AST.BConst False))
-        <|> (m_identifier >>= return . AST.Ident)
+term = m_parens expr
+    <|> (m_reserved "True" >> return (AST.BConst True))
+    <|> (m_reserved "False" >> return (AST.BConst False))
+    <|> (m_integer >>= return . AST.IntConst)
+    <|> (m_identifier >>= return . AST.Ident)
 
-boolExprTable = [[prefix "not" AST.Not],
-                 [binary "and" AST.And AssocLeft],
-                 [binary "or" AST.Or AssocLeft],
-                 [binary "=" AST.Eq AssocLeft, binary "<>" AST.NE AssocLeft,
-                  binary "<" AST.LT AssocLeft, binary "<=" AST.LTE AssocLeft,
-                  binary ">" AST.GT AssocLeft, binary ">=" AST.GTE AssocLeft]]
+exprTable = [[prefix "not" AST.Not],
+             [binary "*" AST.Mult AssocLeft, binary "/" AST.Div AssocLeft,
+              binary "div" AST.DivT AssocLeft, binary "mod" AST.Mod AssocLeft],
+             [binary "+" AST.Add AssocLeft, binary "-" AST.Sub AssocLeft],
+             [binary "and" AST.And AssocLeft, binary "or" AST.Or AssocLeft],
+             [binary "=" AST.Eq AssocLeft, binary "<>" AST.NE AssocLeft,
+              binary "<" AST.LT AssocLeft, binary "<=" AST.LTE AssocLeft,
+              binary ">" AST.GT AssocLeft, binary ">=" AST.GTE AssocLeft]]
 
 binary name fun assoc = Infix (do { m_reservedOp name; return fun }) assoc
 prefix name fun = Prefix (do { m_reservedOp name; return fun })
