@@ -7,7 +7,7 @@ begin
     A := True;
     B := False;
     if A and B then
-        C := B;
+        C := B
     else
-        C := A;
+        C := A
 end.

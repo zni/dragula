@@ -78,13 +78,13 @@ program = do try $ m_reserved "program"
 
 blocks :: Parser AST.Pascal
 blocks =  try varDecPart
-      <|>  begin
+      <|>  compoundStatement
 
-begin :: Parser AST.Pascal
-begin = do m_reserved "begin"
-           seq <- m_semiSep statements
-           m_reserved "end"
-           return $ AST.Begin seq
+compoundStatement :: Parser AST.Pascal
+compoundStatement = do m_reserved "begin"
+                       seq <- m_semiSep statements
+                       m_reserved "end"
+                       return $ AST.Begin seq
 
 varDecPart :: Parser AST.Pascal
 varDecPart = do try $ m_reserved "var"
@@ -99,41 +99,50 @@ varDec = do idents <- m_commaSep m_identifier
             let vars = map (flip AST.Var $ t) idents
             return vars
 
--- Holds non-if statements.
-baseStatements :: Parser AST.Pascal
-baseStatements = try assign
-              <|> try begin
+-- Handle if statements.
+conditionalStatement :: Parser AST.Pascal
+conditionalStatement = ifStatement
+
+ifStatement :: Parser AST.Pascal
+ifStatement = try ifThenElse
+           <|> ifThen
+
+ifThen :: Parser AST.Pascal
+ifThen = do m_reserved "if"
+            pred <- expr
+            m_reserved "then"
+            thenBranch <- statements
+            return $ AST.If pred thenBranch Nothing
+
+ifThenElse :: Parser AST.Pascal
+ifThenElse = do m_reserved "if"
+                pred <- expr
+                m_reserved "then"
+                thenBranch <- statements
+                m_reserved "else"
+                elseBranch <- statements
+                return $ AST.If pred thenBranch (Just elseBranch)
+
+assignment :: Parser AST.Pascal
+assignment = do ident <- m_identifier
+                m_reservedOp ":="
+                expr <- expr
+                return $ AST.Assign ident expr
+
+simpleStatements :: Parser AST.Pascal
+simpleStatements = assignment
+                <|> empty
+
+empty :: Parser AST.Pascal
+empty = m_whiteSpace >> return AST.Noop
+
+structuredStatements :: Parser AST.Pascal
+structuredStatements = compoundStatement
+                    <|> conditionalStatement
 
 statements :: Parser AST.Pascal
-statements = baseStatements
-          <|> selectionStmnt
-
--- Handle if statements.
-selectionStmnt :: Parser AST.Pascal
-selectionStmnt = try ifElseStmnt
-              <|> ifStmnt
-
-ifStmnt :: Parser AST.Pascal
-ifStmnt = do m_reserved "if"
-             pred <- expr
-             m_reserved "then"
-             thenBranch <- statements
-             return $ AST.If pred thenBranch Nothing
-
-ifElseStmnt :: Parser AST.Pascal
-ifElseStmnt = do m_reserved "if"
-                 pred <- expr
-                 m_reserved "then"
-                 thenBranch <- statements
-                 m_reserved "else"
-                 elseBranch <- statements
-                 return $ AST.If pred thenBranch (Just elseBranch)
-
-assign :: Parser AST.Pascal
-assign = do ident <- m_identifier
-            m_reservedOp ":="
-            expr <- expr
-            return $ AST.Assign ident expr
+statements = structuredStatements
+          <|> simpleStatements
 
 pascal :: Parser AST.Pascal
 pascal = program
@@ -148,6 +157,11 @@ pascalParser f = do
 -- expr tester
 exprParser :: String -> IO ()
 exprParser s = case (parse expr "" s) of
+                   Left err  -> print err
+                   Right xs  -> print xs
+
+stmtParser :: String -> IO ()
+stmtParser s = case (parse statements "" s) of
                    Left err  -> print err
                    Right xs  -> print xs
 
