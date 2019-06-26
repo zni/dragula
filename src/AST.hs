@@ -6,6 +6,7 @@ data Pascal =
     Program String [Pascal]       |
     Begin [Pascal]                |
     If Expr Pascal (Maybe Pascal) |
+    While Expr Pascal             |
     VarDec [Pascal]               |
     Var String Type               |
     WriteLn String                |

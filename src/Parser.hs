@@ -16,7 +16,7 @@ def = emptyDef{ commentStart = "{"
               , identStart   = letter
               , identLetter  = alphaNum
               , opStart      = opLetter def
-              , opLetter     = oneOf "+-*/=" 
+              , opLetter     = oneOf "+-*/="
               , reservedOpNames = [":=", "+", "-", "*", "mod", "/",
                                    "=", "<=", "<",
                                    ">=", ">", "<>",
@@ -99,6 +99,17 @@ varDec = do idents <- m_commaSep m_identifier
             let vars = map (flip AST.Var $ t) idents
             return vars
 
+repetitiveStatement :: Parser AST.Pascal
+repetitiveStatement = whileStatement
+--                   <|> forStatement
+--                   <|> repeatStatement
+
+whileStatement :: Parser AST.Pascal
+whileStatement = do m_reserved "while"
+                    test <- expr
+                    body <- statements
+                    return $ AST.While test body
+
 -- Handle if statements.
 conditionalStatement :: Parser AST.Pascal
 conditionalStatement = ifStatement
@@ -139,6 +150,7 @@ empty = m_whiteSpace >> return AST.Noop
 structuredStatements :: Parser AST.Pascal
 structuredStatements = compoundStatement
                     <|> conditionalStatement
+                    <|> repetitiveStatement
 
 statements :: Parser AST.Pascal
 statements = structuredStatements
@@ -149,7 +161,7 @@ pascal = program
 
 pascalParser :: String -> IO ()
 pascalParser f = do
-  result <- parseFromFile pascal f 
+  result <- parseFromFile pascal f
   case result of
     Left err   -> print err
     Right expr -> print expr
