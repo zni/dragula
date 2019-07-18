@@ -157,8 +157,8 @@ while = do
 pl0 :: Parser AST.PL0
 pl0 = program
 
-pascalParser :: String -> IO ()
-pascalParser f = do
+pl0Parser :: String -> IO ()
+pl0Parser f = do
   result <- parseFromFile pl0 f
   case result of
     Left err   -> print err
