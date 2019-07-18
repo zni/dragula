@@ -17,18 +17,12 @@ def = emptyDef{ commentStart = "{"
               , identLetter  = alphaNum
               , opStart      = opLetter def
               , opLetter     = oneOf "+-*/="
-              , reservedOpNames = [":=", "+", "-", "*", "mod", "/",
+              , reservedOpNames = [":=", "+", "-", "*", "/",
                                    "=", "<=", "<",
-                                   ">=", ">", "<>",
-                                   "not", "and", "or"]
-              , reservedNames = ["array", "begin", "case",
-                                 "const", "div", "do", "downto",
-                                 "else", "file", "for", "function",
-                                 "goto", "if", "in", "label",
-                                 "nil", "of", "packed", "procedure",
-                                 "program", "record", "repeat", "set",
-                                 "then", "to", "type", "until", "var",
-                                 "while", "with"]
+                                   ">=", ">", "#" ]
+              , reservedNames = [ "begin", "call", "const", "do",
+                                  "end", "if", "odd", "procedure", "then",
+                                  "var", "while", "!" ]
               }
 
 TokenParser{ parens = m_parens
@@ -51,129 +45,122 @@ TokenParser{ parens = m_parens
 expr = buildExpressionParser exprTable term
 
 term = m_parens expr
-    <|> (m_reserved "True" >> return (AST.BConst True))
-    <|> (m_reserved "False" >> return (AST.BConst False))
     <|> (m_integer >>= return . AST.IntConst)
     <|> (m_identifier >>= return . AST.Ident)
 
-exprTable = [[prefix "not" AST.Not],
-             [binary "*" AST.Mult AssocLeft, binary "/" AST.Div AssocLeft,
-              binary "div" AST.DivT AssocLeft, binary "mod" AST.Mod AssocLeft],
+exprTable = [[binary "*" AST.Mult AssocLeft, binary "/" AST.Div AssocLeft],
              [binary "+" AST.Add AssocLeft, binary "-" AST.Sub AssocLeft],
-             [binary "and" AST.And AssocLeft, binary "or" AST.Or AssocLeft],
-             [binary "=" AST.Eq AssocLeft, binary "<>" AST.NE AssocLeft,
+             [binary "=" AST.Eq AssocLeft, binary "#" AST.NE AssocLeft,
               binary "<" AST.LT AssocLeft, binary "<=" AST.LTE AssocLeft,
               binary ">" AST.GT AssocLeft, binary ">=" AST.GTE AssocLeft]]
 
 binary name fun assoc = Infix (do { m_reservedOp name; return fun }) assoc
 prefix name fun = Prefix (do { m_reservedOp name; return fun })
 
-program :: Parser AST.Pascal
-program = do try $ m_reserved "program"
-             name <- m_identifier
-             m_semi
-             source <- many1 blocks
+program :: Parser AST.PL0
+program = do source <- block
              m_dot
-             return $ AST.Program name source
+             return $ AST.Program source
 
-blocks :: Parser AST.Pascal
-blocks =  try varDecPart
-      <|>  compoundStatement
+block :: Parser AST.PL0
+block =  do
+    c <- optionMaybe constDecs
+    v <- optionMaybe varDecs
+    p <- many procedure
+    s <- statement
+    return $ AST.Block c v p s
 
-compoundStatement :: Parser AST.Pascal
-compoundStatement = do m_reserved "begin"
-                       seq <- m_semiSep statements
-                       m_reserved "end"
-                       return $ AST.Begin seq
+varDecs :: Parser AST.PL0
+varDecs = do
+    try $ m_reserved "var"
+    seq <- m_commaSep varDec
+    m_semi
+    return $ AST.VarDec seq
 
-varDecPart :: Parser AST.Pascal
-varDecPart = do try $ m_reserved "var"
-                varDecs <- varDec `sepEndBy1` m_semi
-                let varDecs' = concat varDecs
-                return $ AST.VarDec varDecs'
+varDec :: Parser AST.PL0
+varDec = do t <- m_identifier
+            return $ AST.Var t
 
-varDec :: Parser [AST.Pascal]
-varDec = do idents <- m_commaSep m_identifier
-            m_colon
-            t <- m_identifier
-            let vars = map (flip AST.Var $ t) idents
-            return vars
+constDecs :: Parser AST.PL0
+constDecs = do
+    try $ m_reserved "const"
+    seq <- m_commaSep constDec
+    m_semi
+    return $ AST.ConstDec seq
 
-repetitiveStatement :: Parser AST.Pascal
-repetitiveStatement = whileStatement
---                   <|> forStatement
---                   <|> repeatStatement
+constDec :: Parser AST.PL0
+constDec = do
+    i <- m_identifier
+    m_reservedOp "="
+    n <- m_integer
+    return $ AST.Const i n
 
-whileStatement :: Parser AST.Pascal
-whileStatement = do m_reserved "while"
-                    test <- expr
-                    body <- statements
-                    return $ AST.While test body
+procedure :: Parser AST.PL0
+procedure = do
+    m_reserved "procedure"
+    n <- m_identifier
+    m_semi
+    b <- block
+    m_semi
+    return $ AST.Procedure n b
 
--- Handle if statements.
-conditionalStatement :: Parser AST.Pascal
-conditionalStatement = ifStatement
+statement :: Parser AST.PL0
+statement =  assign
+         <|> call
+         <|> writeln
+         <|> begin
+         <|> if'
+         <|> while
 
-ifStatement :: Parser AST.Pascal
-ifStatement = try ifThenElse
-           <|> ifThen
+assign :: Parser AST.PL0
+assign = do
+    n <- m_identifier
+    m_reservedOp ":="
+    e <- expr
+    return $ AST.Assign n e
 
-ifThen :: Parser AST.Pascal
-ifThen = do m_reserved "if"
-            pred <- expr
-            m_reserved "then"
-            thenBranch <- statements
-            return $ AST.If pred thenBranch Nothing
+call :: Parser AST.PL0
+call = do
+    m_reserved "call"
+    n <- m_identifier
+    return $ AST.Call n
 
-ifThenElse :: Parser AST.Pascal
-ifThenElse = do m_reserved "if"
-                pred <- expr
-                m_reserved "then"
-                thenBranch <- statements
-                m_reserved "else"
-                elseBranch <- statements
-                return $ AST.If pred thenBranch (Just elseBranch)
+writeln :: Parser AST.PL0
+writeln = do
+    m_reserved "!"
+    e <- expr
+    return $ AST.WriteLn e
 
-assignment :: Parser AST.Pascal
-assignment = do ident <- m_identifier
-                m_reservedOp ":="
-                expr <- expr
-                return $ AST.Assign ident expr
+begin :: Parser AST.PL0
+begin = do
+    m_reserved "begin"
+    stmts <- m_semiSep statement
+    m_reserved "end"
+    return $ AST.Begin stmts
 
-simpleStatements :: Parser AST.Pascal
-simpleStatements = assignment
-                <|> empty
+if' :: Parser AST.PL0
+if' = do
+    m_reserved "if"
+    e <- expr
+    m_reserved "then"
+    s <- statement
+    return $ AST.If e s
 
-empty :: Parser AST.Pascal
-empty = m_whiteSpace >> return AST.Noop
+while :: Parser AST.PL0
+while = do
+    m_reserved "while"
+    e <- expr
+    m_reserved "do"
+    s <- statement
+    return $ AST.While e s
 
-structuredStatements :: Parser AST.Pascal
-structuredStatements = compoundStatement
-                    <|> conditionalStatement
-                    <|> repetitiveStatement
-
-statements :: Parser AST.Pascal
-statements = structuredStatements
-          <|> simpleStatements
-
-pascal :: Parser AST.Pascal
-pascal = program
+pl0 :: Parser AST.PL0
+pl0 = program
 
 pascalParser :: String -> IO ()
 pascalParser f = do
-  result <- parseFromFile pascal f
+  result <- parseFromFile pl0 f
   case result of
     Left err   -> print err
     Right expr -> print expr
-
--- expr tester
-exprParser :: String -> IO ()
-exprParser s = case (parse expr "" s) of
-                   Left err  -> print err
-                   Right xs  -> print xs
-
-stmtParser :: String -> IO ()
-stmtParser s = case (parse statements "" s) of
-                   Left err  -> print err
-                   Right xs  -> print xs
 
