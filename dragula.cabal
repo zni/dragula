@@ -3,7 +3,7 @@
 
 name:                dragula
 version:             0.1.0.0
-synopsis:            An compiler for PL/0.
+synopsis:            A compiler for PL/0.
 -- description:
 license:             BSD3
 license-file:        LICENSE
@@ -17,7 +17,9 @@ cabal-version:       >=1.10
 
 executable dragula
   main-is:             Main.hs
-  -- other-modules:
+  other-modules:       AST
+                       Parser
+                       CodeGen
   -- other-extensions:
   build-depends:       base >=4.12 && <4.13, parsec >=3.1 && <3.2
   hs-source-dirs:      src

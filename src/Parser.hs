@@ -157,10 +157,4 @@ while = do
 pl0 :: Parser AST.PL0
 pl0 = program
 
-pl0Parser :: String -> IO ()
-pl0Parser f = do
-  result <- parseFromFile pl0 f
-  case result of
-    Left err   -> print err
-    Right expr -> print expr
-
+pl0Parser = parseFromFile pl0
