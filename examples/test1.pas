@@ -1,3 +1,4 @@
+var x;
 begin
     if x > 1 then
     begin

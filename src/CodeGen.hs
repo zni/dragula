@@ -1,87 +1,111 @@
 module CodeGen where
 
 import qualified AST
+import qualified IR
 
-genPL0 :: AST.PL0 -> IO ()
-genPL0 (AST.Program p) = do
-    genPL0 p
 
-genPL0 (AST.Block c v p s) = do
-    genPL0 s
 
-genPL0 (AST.Begin stmts) = do
-    mapM_ genPL0 stmts
+genPL0 :: Integer -> AST.PL0 -> [IR.Line]
+genPL0 n (AST.Program p) =
+    genPL0 n p
 
-genPL0 (AST.If cond stmt) = do
-    mapExpr cond
-    putStrLn "jmz"
-    genPL0 stmt
+genPL0 n (AST.Block c v p s) =
+    let stmts  = genPL0 n s
+        offset = toInteger . length $ stmts
+        procs  = concat $ map (genPL0 offset) p
+    in stmts ++ procs
 
-genPL0 (AST.While cond stmt) = do
-    mapExpr cond
-    putStrLn "jmz"
-    genPL0 stmt
+genPL0 n (AST.Procedure s body) =
+    let label = IR.mkLabel n
+        n'    = succ n
+    in [IR.Line (Just s) IR.NOOP] ++
+       genPL0 n' body
 
-genPL0 (AST.WriteLn e) = do
-    mapExpr e
-    putStrLn "write"
+genPL0 n (AST.Begin stmts) =
+    concat $ map (genPL0 n) stmts
 
-genPL0 (AST.Call s) = do
-    putStrLn "jmp"
+genPL0 n (AST.If cond stmt) =
+    let label = IR.mkLabel n
+        n'    = succ n
+    in (genExpr cond) ++
+       [IR.Line Nothing (IR.JMZ label)] ++
+       (genPL0 n' stmt) ++
+       [IR.Line (Just label) IR.NOOP]
 
-genPL0 (AST.Assign s e) = do
-    mapExpr e
-    putStrLn $ "store " ++ s
+genPL0 n (AST.While cond stmt) =
+    let label  = IR.mkLabel n
+        n'     = succ n
+        label2 = IR.mkLabel n'
+        n''    = succ n
+    in [IR.Line (Just label2) IR.NOOP] ++
+       (genExpr cond) ++
+       [IR.Line Nothing (IR.JMZ label)] ++
+       genPL0 n'' stmt ++
+       [IR.Line Nothing (IR.JMP label2)] ++
+       [IR.Line (Just label) IR.NOOP]
 
-mapExpr :: AST.Expr -> IO ()
-mapExpr (AST.Mult l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "mul"
+genPL0 n (AST.WriteLn e) =
+    (genExpr e) ++
+    [IR.Line Nothing IR.WRITE]
 
-mapExpr (AST.Div l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "div"
+genPL0 n (AST.Call s) =
+    [IR.Line Nothing (IR.JMP s)]
 
-mapExpr (AST.Add l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "add"
+genPL0 n (AST.Assign s e) =
+    (genExpr e) ++
+    [IR.Line Nothing (IR.STORE s)]
 
-mapExpr (AST.LT l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "lt"
 
-mapExpr (AST.LTE l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "lte"
 
-mapExpr (AST.GT l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "gt"
+genExpr :: AST.Expr -> [IR.Line]
+genExpr (AST.Mult l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.MUL]
 
-mapExpr (AST.GTE l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "gte"
+genExpr (AST.Div l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.DIV]
 
-mapExpr (AST.NE l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "ne"
+genExpr (AST.Add l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.ADD]
 
-mapExpr (AST.Eq l r) = do
-    mapExpr l
-    mapExpr r
-    putStrLn "eq"
+genExpr (AST.LT l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.LT]
 
-mapExpr (AST.Ident s) = do
-    putStrLn $ "load " ++ s
+genExpr (AST.LTE l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.LTE]
 
-mapExpr (AST.IntConst i) = do
-    putStrLn $ "loadconst " ++ (show i)
+genExpr (AST.GT l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.GT]
+
+genExpr (AST.GTE l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.GTE]
+
+genExpr (AST.NE l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.NEQ]
+
+genExpr (AST.Eq l r) =
+    (genExpr l) ++
+    (genExpr r) ++
+    [IR.Line Nothing IR.EQ]
+
+genExpr (AST.Ident s) =
+    [IR.Line Nothing (IR.LOAD s)]
+
+genExpr (AST.IntConst i) =
+    [IR.Line Nothing (IR.LOADC i)]
 

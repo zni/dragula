@@ -12,4 +12,4 @@ run (x:_) = do
     result <- pl0Parser x
     case result of
         Left err -> print err
-        Right pl0 -> genPL0 pl0
+        Right pl0 -> mapM_ print $ genPL0 0 pl0
