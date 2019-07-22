@@ -19,6 +19,9 @@ data IR =
     GTE           |
     EQ            |
     NEQ           |
+    HALT          |
+    STARTFUNC     |
+    RET           |
     NOOP
     deriving (Show)
 
