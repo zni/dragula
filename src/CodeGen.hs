@@ -10,6 +10,7 @@ import qualified IR
 initialState = GenState {
     sym = 0,
     env = Map.empty,
+    decs = Map.empty,
     const_env = Map.empty,
     procedures = []
 }
@@ -17,7 +18,8 @@ initialState = GenState {
 data GenState = GenState {
     sym        :: Integer,
     env        :: Map.Map String String,
-    const_env  :: Map.Map String Integer,
+    decs       :: Map.Map String Integer,
+    const_env  :: Map.Map Integer String,
     procedures :: [IR.Line]
 }
     deriving (Show)
@@ -107,6 +109,8 @@ genVarPL0 (AST.Var v) = do
     put state { sym = succ . sym $ state }
     state <- get
     put state { env = Map.insert v label . env $ state }
+    state <- get
+    put state { decs = Map.insert label 0 . decs $ state }
 
 genConstsPL0 :: Maybe AST.PL0 -> State GenState ()
 genConstsPL0 Nothing = return ()
@@ -119,6 +123,8 @@ genConstPL0 (AST.Const s i) = do
     put state { sym = succ . sym $ state }
     state <- get
     put state { env = Map.insert s label . env $ state }
+    state <- get
+    put state { decs = Map.insert label i . decs $ state }
 
 genExpr :: AST.Expr -> State GenState [IR.Line]
 genExpr (AST.Mult l r) = do
@@ -189,6 +195,29 @@ genExpr (AST.Ident s) = do
     let (Just label) = Map.lookup s (env state)
     return [IR.Line Nothing (IR.LOAD label)]
 
-genExpr (AST.IntConst i) =
-    return [IR.Line Nothing (IR.LOADC i)]
+genExpr (AST.IntConst i) = do
+    state <- get
+    let cenv = const_env state
+    let const = Map.lookup i cenv
+    case const of
+        (Just label) -> return [IR.Line Nothing (IR.LOAD label)]
+        Nothing      -> do let label = IR.mkLabel (sym state)
+                           put state { sym = succ . sym $ state,
+                                       const_env = Map.insert i label (const_env state),
+                                       decs = Map.insert label i (decs state) }
+                           return [IR.Line Nothing (IR.LOAD label)]
 
+removeNoops :: [IR.Line] -> [IR.Line]
+removeNoops []     = []
+removeNoops (x:xs) =
+    if null xs
+        then x:removeNoops xs
+        else let (IR.Line label cmd) = head xs
+             in case x of
+                    (IR.Line l IR.NOOP) -> (IR.Line l cmd):(removeNoops (tail xs))
+                    _                   -> x:(removeNoops xs)
+
+generateDecs :: Map.Map String Integer -> [IR.Line]
+generateDecs m =
+    let list = Map.toList m
+    in map (\(s, v) -> IR.Line (Just s) (IR.DEC v)) list

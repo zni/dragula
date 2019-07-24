@@ -6,7 +6,6 @@ data IR =
     JMP Label     |
     JMZ Label     |
     LOAD  Label   |
-    LOADC Integer |
     STORE Label   |
     WRITE         |
     ADD           |
@@ -22,6 +21,7 @@ data IR =
     HALT          |
     STARTFUNC     |
     RET           |
+    DEC Integer   |
     NOOP
     deriving (Show)
 

@@ -13,5 +13,9 @@ run (x:_) = do
     case result of
         Left err -> print err
         Right pl0 -> do let (ir, state) = generateCode pl0
-                        mapM_ print ir
-                        print state
+                        let procs = procedures state
+                        let ir' = removeNoops ir
+                        let procs' = removeNoops procs
+                        let decs' = generateDecs . decs $ state
+                        let code = ir' ++ decs' ++ procs'
+                        mapM_ print code
