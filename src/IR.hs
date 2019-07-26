@@ -7,6 +7,7 @@ data IR =
     JMZ Label     |
     LOAD  Label   |
     STORE Label   |
+    CALL  Label   |
     WRITE         |
     ADD           |
     SUB           |

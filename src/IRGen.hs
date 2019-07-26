@@ -1,4 +1,11 @@
-module CodeGen where
+module IRGen (generateIR,
+              sym,
+              env,
+              decs,
+              const_env,
+              procedures,
+              generateDecs,
+              removeNoops) where
 
 import Control.Monad.State
 import qualified Data.Map.Lazy as Map
@@ -24,8 +31,8 @@ data GenState = GenState {
 }
     deriving (Show)
 
-generateCode :: AST.PL0 -> ([IR.Line], GenState)
-generateCode p = runState (genPL0 p) initialState
+generateIR :: AST.PL0 -> ([IR.Line], GenState)
+generateIR p = runState (genPL0 p) initialState
 
 genPL0 :: AST.PL0 -> State GenState [IR.Line]
 genPL0 (AST.Program p) = do
@@ -90,7 +97,7 @@ genPL0 (AST.WriteLn e) = do
 genPL0 (AST.Call s) = do
     state <- get
     let (Just label) = Map.lookup s (env state)
-    return [IR.Line Nothing (IR.JMP label)]
+    return [IR.Line Nothing (IR.CALL label)]
 
 genPL0 (AST.Assign s e) = do
     e' <- genExpr e
