@@ -2,8 +2,8 @@ module Main where
 import System.Environment (getArgs)
 import Text.Printf
 import Parser
-import IRGen
-import CodeGen
+import IRGenPDP
+-- import CodeGen
 import qualified VM
 
 main :: IO ()
@@ -21,7 +21,7 @@ run (x:_) = do
                         let procs' = removeNoops procs
                         let decs' = generateDecs . decs $ state
                         let code = ir' ++ decs' ++ procs'
-                        let code' = generateCode code
-                        mapM_ (printf "0x%08x\n") code'
-                        state <- VM.load code'
-                        VM.run state
+                        -- let code' = generateCode code
+                        mapM_ (print) code
+                        -- state <- VM.load code'
+                        -- VM.run state
