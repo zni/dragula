@@ -15,19 +15,23 @@ import qualified AST
 import qualified IRPDP
 
 initialState = GenState {
+    register = 0,
     sym = 0,
     env = Map.empty,
     decs = Map.empty,
     const_env = Map.empty,
+    register_env = Map.empty,
     procedures = []
 }
 
 data GenState = GenState {
-    sym        :: Integer,
-    env        :: Map.Map String String,
-    decs       :: Map.Map String Integer,
-    const_env  :: Map.Map Integer String,
-    procedures :: [IRPDP.Line]
+    register     :: Integer,
+    sym          :: Integer,
+    env          :: Map.Map String String,
+    decs         :: Map.Map String Integer,
+    const_env    :: Map.Map Integer String,
+    register_env :: Map.Map Integer String,
+    procedures   :: [IRPDP.Line]
 }
     deriving (Show)
 
@@ -50,14 +54,14 @@ genPL0 (AST.Block c v p s) = do
 
 genPL0 (AST.Procedure s body) = do
     state <- get
-    let label = IRPDP.mkLabel (sym state)
+    let l@(IRPDP.Text label) = IRPDP.mkLabel (sym state)
     put state { sym = succ . sym $ state }
     state <- get
     put state { env = Map.insert s label . env $ state }
     body' <- genPL0 body
-    return $ [IRPDP.Func (Just label)] ++
+    return $ [IRPDP.Line (Just l) IRPDP.NOP] ++
              body' ++
-             [IRPDP.Line Nothing (IRPDP.RTS "PC")]
+             [IRPDP.Line Nothing (IRPDP.RTS (IRPDP.Register 7))]
 
 genPL0 (AST.Begin stmts) = do
     stmts' <- mapM genPL0 stmts
@@ -67,10 +71,14 @@ genPL0 (AST.If cond stmt) = do
     state <- get
     let label = IRPDP.mkLabel (sym state)
     put state { sym = succ . sym $ state }
-    cond' <- genExpr cond
+    state <- get
+    let forwardLabel = Just . IRPDP.mkLabel $ sym state
+    put state { sym = succ . sym $ state }
+    cond' <- genExpr cond forwardLabel
     stmt' <- genPL0 stmt
     return (cond' ++
             [IRPDP.Line Nothing (IRPDP.BEQ label)] ++
+            [IRPDP.Line forwardLabel IRPDP.NOP] ++
             stmt' ++
             [IRPDP.Line (Just label) IRPDP.NOP])
 
@@ -81,7 +89,7 @@ genPL0 (AST.While cond stmt) = do
     state <- get
     let backwardLabel = IRPDP.mkLabel (sym state)
     put state { sym = succ . sym $ state }
-    cond' <- genExpr cond
+    cond' <- genExpr cond Nothing -- TODO come back to this.
     stmt' <- genPL0 stmt
     return ([IRPDP.Line (Just backwardLabel) IRPDP.NOP] ++
             cond' ++
@@ -91,19 +99,23 @@ genPL0 (AST.While cond stmt) = do
             [IRPDP.Line (Just forwardLabel) IRPDP.NOP])
 
 genPL0 (AST.WriteLn e) = do
-    e' <- genExpr e
+    e' <- genExpr e Nothing
     return (e' ++ [IRPDP.Line Nothing IRPDP.OUT])
 
 genPL0 (AST.Call s) = do
     state <- get
     let (Just label) = Map.lookup s (env state)
-    return [IRPDP.Line Nothing (IRPDP.JSR "PC" label)]
+    let addr = IRPDP.Text label
+    return [IRPDP.Line Nothing (IRPDP.JSR (IRPDP.Register 7) addr)]
 
 genPL0 (AST.Assign s e) = do
-    e' <- genExpr e
     state <- get
+    reg <- mkRegister
+    let (IRPDP.Register r) = reg
     let (Just label) = Map.lookup s (env state)
-    return $ e' ++ [IRPDP.Line Nothing (IRPDP.MOV label "")]
+    e' <- genExpr e (Just $ IRPDP.Text label)
+    put state { register_env = Map.insert r label . register_env $ state }
+    return $ e' ++ [IRPDP.Line Nothing (IRPDP.MOV (IRPDP.Text label) reg)]
 
 genVarsPL0 :: Maybe AST.PL0 -> State GenState ()
 genVarsPL0 Nothing = return ()
@@ -112,7 +124,7 @@ genVarsPL0 (Just (AST.VarDec decs)) = mapM_ genVarPL0 decs
 genVarPL0 :: AST.PL0 -> State GenState ()
 genVarPL0 (AST.Var v) = do
     state <- get
-    let label = IRPDP.mkLabel (sym state)
+    let l@(IRPDP.Text label) = IRPDP.mkLabel (sym state)
     put state { sym = succ . sym $ state }
     state <- get
     put state { env = Map.insert v label . env $ state }
@@ -126,93 +138,111 @@ genConstsPL0 (Just (AST.ConstDec decs)) = mapM_ genConstPL0 decs
 genConstPL0 :: AST.PL0 -> State GenState ()
 genConstPL0 (AST.Const s i) = do
     state <- get
-    let label = IRPDP.mkLabel (sym state)
+    let l@(IRPDP.Text label) = IRPDP.mkLabel (sym state)
     put state { sym = succ . sym $ state }
     state <- get
     put state { env = Map.insert s label . env $ state }
     state <- get
     put state { decs = Map.insert label i . decs $ state }
 
-genExpr :: AST.Expr -> State GenState [IRPDP.Line]
-genExpr (AST.Mult l r) = do
-    left <- genExpr l
-    right <- genExpr r
+genExpr :: AST.Expr -> Maybe IRPDP.Label -> State GenState [IRPDP.Line]
+genExpr (AST.Mult l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
+    src <- mkRegister
+    dest <- mkRegister
     return $ left ++
              right ++
-             [IRPDP.Line Nothing (IRPDP.MUL "" "")]
+             [IRPDP.Line Nothing (IRPDP.MUL src dest)]
 
-genExpr (AST.Div l r) = do
-    left <- genExpr l
-    right <- genExpr r
+genExpr (AST.Div l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
+    src <- mkRegister
+    dest <- mkRegister
     return $ left ++
              right ++
-             [IRPDP.Line Nothing (IRPDP.DIV "" "")]
+             [IRPDP.Line Nothing (IRPDP.DIV src dest)]
 
-genExpr (AST.Add l r) = do
-    left <- genExpr l
-    right <- genExpr r
+genExpr (AST.Add l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
+    src <- mkRegister
+    dest <- mkRegister
     return $ left ++
              right ++
-             [IRPDP.Line Nothing (IRPDP.ADD "" "")]
+             [IRPDP.Line Nothing (IRPDP.ADD src dest)]
 
-genExpr (AST.LT l r) = do
-    left <- genExpr l
-    right <- genExpr r
+genExpr (AST.LT l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
     return $ left ++
              right ++
-             [IRPDP.Line Nothing (IRPDP.BLT "")]
+             [IRPDP.Line Nothing (IRPDP.BLT $ IRPDP.Text "")]
 
-genExpr (AST.LTE l r) = do
-    left <- genExpr l
-    right <- genExpr r
+genExpr (AST.LTE l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
     return $ left ++
              right ++
-             [IRPDP.Line Nothing (IRPDP.BLE "")]
+             [IRPDP.Line Nothing (IRPDP.BLE (IRPDP.Text ""))]
 
-genExpr (AST.GT l r) = do
-    left <- genExpr l
-    right <- genExpr r
+genExpr (AST.GT l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
+    let prev_src = lookupRegister left
+    let prev_dest = lookupRegister right
+    src <- mkRegister
+    dest <- mkRegister
+    if isJust prev_dest && isJust prev_src && isJust label
+        then return $ left ++
+                right ++
+                [IRPDP.Line Nothing (IRPDP.CMP (fromJust prev_src) (fromJust prev_dest))] ++
+                [IRPDP.Line Nothing (IRPDP.BGT (fromJust label))]
+        else return $ left ++
+                right ++
+                [IRPDP.Line Nothing (IRPDP.CMP src dest)] ++
+                [IRPDP.Line Nothing (IRPDP.BGT (IRPDP.Text ""))]
+
+genExpr (AST.GTE l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
     return $ left ++
              right ++
-             [IRPDP.Line Nothing (IRPDP.BGT "")]
+             [IRPDP.Line Nothing (IRPDP.BGE (IRPDP.Text ""))]
 
-genExpr (AST.GTE l r) = do
-    left <- genExpr l
-    right <- genExpr r
+genExpr (AST.NE l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
     return $ left ++
              right ++
-             [IRPDP.Line Nothing (IRPDP.BGE "")]
+             [IRPDP.Line Nothing (IRPDP.BNE (IRPDP.Text ""))]
 
-genExpr (AST.NE l r) = do
-    left <- genExpr l
-    right <- genExpr r
+genExpr (AST.Eq l r) label = do
+    left <- genExpr l label
+    right <- genExpr r label
     return $ left ++
              right ++
-             [IRPDP.Line Nothing (IRPDP.BNE "")]
+             [IRPDP.Line Nothing (IRPDP.BEQ (IRPDP.Text ""))]
 
-genExpr (AST.Eq l r) = do
-    left <- genExpr l
-    right <- genExpr r
-    return $ left ++
-             right ++
-             [IRPDP.Line Nothing (IRPDP.BEQ "")]
-
-genExpr (AST.Ident s) = do
+genExpr (AST.Ident s) label = do
     state <- get
     let (Just label) = Map.lookup s (env state)
-    return [IRPDP.Line Nothing (IRPDP.MOV label "")]
+    dest <- mkRegister
+    return [IRPDP.Line Nothing (IRPDP.MOV (IRPDP.Text label) dest)]
 
-genExpr (AST.IntConst i) = do
+genExpr (AST.IntConst i) label = do
     state <- get
     let cenv = const_env state
     let const = Map.lookup i cenv
+    dest <- mkRegister
     case const of
-        (Just label) -> return [IRPDP.Line Nothing (IRPDP.MOV label "")]
-        Nothing      -> do let label = IRPDP.mkLabel (sym state)
+        (Just label) -> return [IRPDP.Line Nothing (IRPDP.MOV (IRPDP.Text label) dest)]
+        Nothing      -> do let l@(IRPDP.Text label) = IRPDP.mkLabel (sym state)
                            put state { sym = succ . sym $ state,
                                        const_env = Map.insert i label (const_env state),
                                        decs = Map.insert label i (decs state) }
-                           return [IRPDP.Line Nothing (IRPDP.MOV label "")]
+                           return [IRPDP.Line Nothing (IRPDP.MOV l dest)]
 
 removeNoops :: [IRPDP.Line] -> [IRPDP.Line]
 removeNoops []     = []
@@ -222,9 +252,34 @@ removeNoops (x:xs) =
         else let (IRPDP.Line label cmd) = head xs
              in case x of
                     (IRPDP.Line l IRPDP.NOP) -> (IRPDP.Line l cmd):(removeNoops (tail xs))
-                    _                   -> x:(removeNoops xs)
+                    _                        -> x:(removeNoops xs)
 
 generateDecs :: Map.Map String Integer -> [IRPDP.Line]
 generateDecs m =
     let list = Map.toList m
-    in map (\(s, v) -> IRPDP.Line (Just s) (IRPDP.WORD v)) list
+    in map (\(s, v) -> IRPDP.Line (Just (IRPDP.Text s)) (IRPDP.WORD v)) list
+
+updateRegisters :: GenState -> State GenState ()
+updateRegisters state = put state { register = succ . register $ state }
+
+mkRegister :: State GenState IRPDP.Label
+mkRegister = do
+    state <- get
+    let r = IRPDP.mkRegisterLabel $ register state
+    updateRegisters state
+    return r
+
+lookupRegister :: [IRPDP.Line] -> Maybe IRPDP.Label
+lookupRegister [] = Nothing
+lookupRegister ((IRPDP.Line label ir):xs) =
+    if null xs
+        then extractDestRegister ir 
+        else lookupRegister xs
+
+extractDestRegister :: IRPDP.IR -> Maybe IRPDP.Label
+extractDestRegister ir =
+    case ir of
+        (IRPDP.MOV _ dest@(IRPDP.Register d)) -> Just dest
+        _                                     -> Nothing
+
+

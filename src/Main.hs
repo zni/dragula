@@ -4,7 +4,7 @@ import Text.Printf
 import Parser
 import IRGenPDP
 -- import CodeGen
-import qualified VM
+-- import qualified VM
 
 main :: IO ()
 main = getArgs >>= run
@@ -22,6 +22,8 @@ run (x:_) = do
                         let decs' = generateDecs . decs $ state
                         let code = ir' ++ decs' ++ procs'
                         -- let code' = generateCode code
+                        -- print pl0
+                        -- print ir
                         mapM_ (print) code
                         -- state <- VM.load code'
                         -- VM.run state
