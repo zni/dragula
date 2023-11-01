@@ -4,11 +4,24 @@ module IRPDP where
 
 data Label =
     Text String     |
-    Register Integer 
+    Register Integer
+    deriving (Eq, Ord)
 
 instance Show Label where
     show (Text s) = s
     show (Register s) = "R" ++ (show s)
+
+isRegister :: Label -> Bool
+isRegister (Text _) = False
+isRegister (Register _) = True
+
+fromLabel :: Label -> String
+fromLabel (Text s) = s
+fromLabel (Register s) = show s
+
+isEmptyLabel :: Label -> Bool
+isEmptyLabel (Text s) = s == ""
+isEmptyLabel (Register s) = False
 
 data IR =
     JMP   Label         |
